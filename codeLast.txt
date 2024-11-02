@@ -1,0 +1,665 @@
+Attribute VB_Name = "Module1"
+
+Dim wbTran As Workbook
+Dim MTran As Variant
+
+'Variables de Invoice File
+Dim wbInv As Workbook
+Dim hInvoice, hAjust, hClean, hPivot, hActivity, hSave As Worksheet
+Dim MOriginal, MAdjust, MClean, Matriz As Variant
+Dim LCN, x1, x2 As Integer
+Dim LCL, Ty, Qty, Item, Desc, TName, InvType, Cliente As String
+Dim PT As PivotTable
+Dim PC As PivotCache
+Dim r1 As Range
+Dim objTable As ListObject
+Dim dict As Object
+
+'Variables Billing Fileeee
+Dim hIn, hOut, hReturn, hFail As Worksheet 'FKBSKFB
+
+'Variables WHS DB
+Dim wbD As Workbook
+Dim hClieents As Worksheet
+Dim MClients As Variant
+
+'Variables globales
+Dim MIn, MOut, MReturn As Variant
+Dim totalFilas, xIn, xOut, xR As Long
+Dim Items_, ItemsRef, dict_, valueDict, DescDic, ConvertionFail, ItemsTemplate, Headers As Object
+Dim MShipTo As Variant
+
+  Sub AA_Update_Fullfilment()
+    Process_Transaction
+    Process_Invoice
+    Process_Billing
+  End Sub
+
+  Sub Process_Transaction()
+    Set wbTran = Workbooks.Open(ThisWorkbook.Path & "\Transaction.xlsx")
+
+    Cliente = ThisWorkbook.Sheets("Outbound").Range("D1").Value
+    CleanTransaction
+    wbTran.Close SaveChanges:=True
+  End Sub
+
+  Sub Process_Invoice()
+    
+    fileName = ThisWorkbook.Path & IIf(Dir(ThisWorkbook.Path & "\Invoice.xlsx") <> "", "\Invoice.xlsx", "\ShipTo.xlsx")
+    InvType = IIf(fileName Like "*Invoice.xlsx", "Invoice", "ShipTo")
+
+    Set wbInv = Workbooks.Open(fileName)
+    CleanInvoice
+    'wbInv.Save
+  End Sub
+
+  Sub Process_Billing()
+    JoinTranPivot
+    GetMatrices
+    MatchValues
+  End Sub
+
+
+
+
+
+' ==============================================================
+'                       PROCCESS TRANSACATION
+' ==============================================================
+  Sub CleanTransaction()
+    Dim hTran As Worksheet
+    Set Items_ = CreateObject("Scripting.Dictionary")
+    Set hTran = wbTran.Sheets("TransactionReport")
+
+    ' Preparar hoja
+    With ActiveSheet
+        .Cells.UnMerge: .UsedRange.WrapText = False
+        hTran.Rows("1:5").Delete: hTran.Columns("Z:AA").Delete
+    End With
+
+    ' Eliminar columnas vac?as
+    For c = ActiveSheet.Cells.SpecialCells(xlLastCell).Column To 1 Step -1
+        If WorksheetFunction.CountA(Columns(c)) = 0 Then Columns(c).Delete
+    Next c
+    
+    'Inicializar valores
+    NTran = (hTran.Cells(hTran.Rows.Count, 2).End(xlUp).Row) - 2
+    MTran = hTran.Range("A2:R" & NTran).Value
+    xIn = 1: xOut = 1: xR = 1
+    ReDim MIn(1 To NTran, 1 To 18), MOut(1 To NTran, 1 To 18), MReturn(1 To NTran, 1 To 18)
+    
+    'Analizar y guardar valores en Dictionarios
+    For fila = 2 To UBound(MTran)
+      Set ItemsInfo = CreateObject("Scripting.Dictionary")
+
+      Select Case True
+        Case MTran(fila, 7) <> "": Call FillMatriz(MIn, xIn, fila): Sheet = "Inbound"
+        Case MTran(fila, 8) > 0: Call FillMatriz(MOut, xOut, fila): Sheet = "Outbound"
+        Case Else: Call FillMatriz(MReturn, xR, fila): Sheet = "Activity"
+      End Select
+
+      If Not Items_.Exists(MTran(fila, 4)) Then
+        ItemsInfo.Add "Date", MTran(fila, 3): ItemsInfo.Add "Ref", MTran(fila, 5)
+        Items_.Add Sheet & "|" & MTran(fila, 4), ItemsInfo
+      End If
+    Next fila
+    
+    xIn = xIn - 1: xOut = xOut - 1: xR = xR - 1
+    
+    ' Crear nuevas hojas y asignar datos
+    With wbTran
+      .Sheets.Add(After:=.Sheets("TransactionReport")).Name = "In"
+      .Sheets.Add(After:=.Sheets("In")).Name = "Out"
+      .Sheets.Add(After:=.Sheets("Out")).Name = "Return - Others"
+      .Sheets(2).Range("A2:R" & xIn - 1).Value = MIn
+      .Sheets(3).Range("A2:R" & xOut - 1).Value = MOut
+      .Sheets(4).Range("A2:R" & xR - 1).Value = MReturn
+      .Sheets(2).Range("A1:R1").Value = hTran.Range("A1:R1").Value
+      .Sheets(3).Range("A1:R1").Value = hTran.Range("A1:R1").Value
+      .Sheets(4).Range("A1:R1").Value = hTran.Range("A1:R1").Value
+
+      .Sheets(2).Cells.WrapText = True
+      .Sheets(2).UsedRange.WrapText = False
+      .Sheets(3).Cells.WrapText = True
+      .Sheets(3).UsedRange.WrapText = False
+      .Sheets(4).Cells.WrapText = True
+      .Sheets(4).UsedRange.WrapText = False
+
+      .Sheets(2).Columns("A:R").AutoFit
+      .Sheets(3).Columns("A:R").AutoFit
+      .Sheets(4).Columns("A:R").AutoFit
+      hTran.Columns("A:DK").AutoFit
+    End With
+
+  End Sub
+
+  Sub FillMatriz(MTo As Variant, XTo As Variant, XFrom As Variant)
+    MTo(XTo, 1) = MTran(1, 1)
+    For Col = 2 To 18
+      If Col = 6 Then
+        MTo(XTo, Col) = "'" & MTran(XFrom, Col)
+      Else
+        MTo(XTo, Col) = MTran(XFrom, Col)
+      End If
+    Next Col
+    XTo = XTo + 1
+  End Sub
+
+
+' ==============================================================
+'                       PROCCESS INVOICE
+' ==============================================================
+  Sub CleanInvoice()
+      
+    Set hInvoice = wbInv.Sheets(InvType)
+
+    ' Preparar hoja
+    With ActiveSheet
+      .Cells.UnMerge: .UsedRange.WrapText = False
+      .Columns("A:DK").AutoFit
+      .Range("A1:B1").EntireColumn.Delete
+    End With
+
+    hInvoice.Range("A1:A" & IIf(InvType = "Invoice", 8, 7)).EntireRow.Delete
+    hInvoice.Range("A1").Value = "Type"
+
+    ' Eliminar columnas vac?as
+    For c = ActiveSheet.Cells.SpecialCells(xlLastCell).Column To 1 Step -1
+        If WorksheetFunction.CountA(Columns(c)) = 0 Then Columns(c).Delete
+    Next c
+
+  
+    'Inicializar matriz
+    NInvoice = (hInvoice.Cells(hInvoice.Rows.Count, 2).End(xlUp).Row) - 1
+    Matriz = hInvoice.Range("A2:D" & NInvoice).Value
+
+    'Completas celdas vacias
+    For fila = LBound(Matriz) To UBound(Matriz)
+      If Matriz(fila, 1) = "" Then
+        Matriz(fila, 1) = Ty
+      Else
+        Ty = Matriz(fila, 1)
+      End If
+      
+      If Matriz(fila, 4) = "" And InvType = "Invoice" Then
+        Matriz(fila, 4) = Desc
+      Else
+        Desc = Matriz(fila, 4)
+      End If
+    Next fila
+
+    'Colocar valores
+    hInvoice.Range("A2:D" & NInvoice).Value = Matriz
+    If InvType = "ShipTo" Then hInvoice.Range("B1").Value = "Item": hInvoice.Range("F1").Value = "Description"
+
+    Divide_Invoices
+    CreatePivot
+  End Sub
+
+  Sub Divide_Invoices()
+      
+    Dim DescCorrection, TypeCorrection As String
+    Dim Rango As Range
+
+    totalFilas = (hInvoice.Cells(hInvoice.Rows.Count, 1).End(xlUp).Row) - 1         'En la col 1
+    LCL = Split(Columns(Range("A1").End(xlToRight).Column).Address(, False), ":")(1)
+    LCN = hInvoice.Columns(LCL).Column
+          
+    MOriginal = hInvoice.Range("A1:" & LCL & totalFilas).Value
+    ReDim MAdjust(1 To totalFilas, 1 To LCN)
+    ReDim MClean(1 To totalFilas, 1 To LCN)
+    Set ItemsRef = CreateObject("scripting.dictionary")
+
+    x1 = 1
+    x2 = 1
+    
+    ColTy = Application.WorksheetFunction.Match("Type", hInvoice.Rows(1), 0)
+    ColQty = Application.WorksheetFunction.Match("Qty", hInvoice.Rows(1), 0)
+    ColItem = Application.WorksheetFunction.Match("Item", hInvoice.Rows(1), 0)
+    ColDesc = Application.WorksheetFunction.Match("Description", hInvoice.Rows(1), 0)
+    ColRef = Application.WorksheetFunction.Match("Reference Num", hInvoice.Rows(1), 0)
+            
+    GetDescCorrection
+            
+    For fila = LBound(MOriginal) To UBound(MOriginal)
+      Ty = MOriginal(fila, ColTy)
+      Qty = MOriginal(fila, ColQty)
+      Item = MOriginal(fila, ColItem)
+      Desc = MOriginal(fila, ColDesc)
+      Ref = MOriginal(fila, ColRef)
+            
+      If Ty = "Adjust" Or Ty = "Type" Then
+        For Col = 1 To LCN
+          MAdjust(x1, Col) = MOriginal(fila, Col)
+        Next Col
+        x1 = x1 + 1
+      Else
+      
+        If IsNumeric(Item) = True And Item <> "" And InStr(1, Desc, "Small Parcel Ship") = 0 Then
+          
+          If DescDic.Exists(Desc) Then
+            txt = DescDic.Item(Desc)
+            TypeCorrection = Left(txt, InStr(txt, "---") - 1)
+            DescCorrection = Mid(txt, InStr(txt, "---") + 3, Len(txt))
+            'DescCorrection = Right(txt, InStr(txt, "---") - 2)
+            'Debug.Print txt & " = " & TypeCorrection & " | " & DescCorrection
+          Else
+            TypeCorrection = Ty
+            DescCorrection = Desc
+          End If
+          
+          For Col = 1 To LCN
+            If Col = ColTy Then
+              If InStr(1, DescCorrection, "CANCELED") > 0 Or InStr(1, DescCorrection, "Canceled") > 0 Then
+                MClean(x2, Col) = "Cancelled"
+              ElseIf InStr(1, DescCorrection, "RETURN") > 0 Or InStr(1, DescCorrection, "Return") > 0 Then
+                MClean(x2, Col) = "Return"
+              ElseIf InStr(1, DescCorrection, "Pallet Purchase") > 0 Or InStr(1, DescCorrection, "Pallet Cost") > 0 Then
+                MClean(x2, Col) = "Supplies"
+              ElseIf TypeCorrection <> "Inbound" And TypeCorrection <> "Outbound" Then
+                MClean(x2, Col) = MOriginal(fila, Col)
+              Else
+                If Ty = "Order" Then
+                  MClean(x2, Col) = "Outbound"
+                Else
+                  MClean(x2, Col) = MOriginal(fila, Col)
+                End If
+              End If
+            ElseIf Col = ColDesc Then
+              MClean(x2, Col) = DescCorrection
+            ElseIf Col = ColRef Then
+              If Not ItemsRef.Exists(Item) Then
+                ItemsRef.Add Item, Ref
+              End If
+            Else
+                MClean(x2, Col) = MOriginal(fila, Col)
+            End If
+            
+            If MClean(x2, ColTy) = "Order" Then
+                MClean(x2, ColTy) = "Outbound"
+            End If
+          Next Col
+          x2 = x2 + 1
+        End If
+        
+      End If
+    Next fila
+    
+    wbInv.Sheets.Add(After:=wbInv.Sheets(InvType)).Name = "Adjust"
+    wbInv.Sheets.Add(After:=wbInv.Sheets("Adjust")).Name = "Clean"
+    Set hAdjust = wbInv.Sheets("Adjust")
+    Set hClean = wbInv.Sheets("Clean")
+          
+    hAdjust.Range("A1:" & LCL & totalFilas).Value = MAdjust
+    hClean.Range("A2:" & LCL & totalFilas + 1).Value = MClean
+    
+    MH = hAdjust.Range("A1:" & LCL & "1").Value
+    hClean.Range("A1:" & LCL & "1").Value = MH
+          
+    hAdjust.Columns("A:" & LCL).AutoFit
+    hClean.Columns("A:" & LCL).AutoFit
+
+    Set Rango = hClean.Range("A2:" & LCL & totalFilas + 1)
+    
+    ' Ordenar el rango por Acc
+    With hClean.Sort
+        .SortFields.Clear
+        .SortFields.Add2 Key:=Range("F2:F" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .SetRange Rango
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+
+    ' Ordenar el rango por Sheet
+    With hClean.Sort
+        .SortFields.Clear
+        .SortFields.Add2 Key:=Range("A2:A" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .SetRange Rango
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+
+    MShipTo = hClean.Range("A2:" & LCL & totalFilas + 1).Value
+          
+  End Sub
+
+  Sub GetDescCorrection()
+
+    Set wbDB = Workbooks.Open(ThisWorkbook.Path & "\codigos de WHSE.xlsx")
+    Set hClients = wbDB.Sheets("Outbound")
+    Set DescDic = CreateObject("scripting.dictionary")
+    MClients = hClients.Range("B3:E" & hClients.Cells(hClients.Rows.Count, 2).End(xlUp).Row).Value
+    
+    ColTy = Application.WorksheetFunction.Match("Type", hInvoice.Rows(1), 0)
+    ColQty = Application.WorksheetFunction.Match("Qty", hInvoice.Rows(1), 0)
+    ColItem = Application.WorksheetFunction.Match("Item", hInvoice.Rows(1), 0)
+    ColDesc = Application.WorksheetFunction.Match("Description", hInvoice.Rows(1), 0)
+
+    For fila = LBound(MOriginal) To UBound(MOriginal)
+      Ty = MOriginal(fila, ColTy)
+      Qty = MOriginal(fila, ColQty)
+      Item = MOriginal(fila, ColItem)
+      Desc = MOriginal(fila, ColDesc)
+      
+      If Not DescDic.Exists(Desc) Then
+        For j = 1 To UBound(MClients)
+          If InStr(1, MClients(j, 1), Cliente) > 0 Then           'Si contiene el nombre del cliente
+            If InStr(1, MClients(j, 3), Desc) > 0 Then            'Si contiene el nombre del Accesorio
+              DescDic.Add Desc, MClients(j, 2) & "---" & MClients(j, 4)
+              Exit For
+            End If
+          End If
+        Next j
+      End If
+    Next fila
+    
+    wbDB.Close
+
+  End Sub
+
+  Sub CreatePivot()
+        
+    totalFilas = (hClean.Cells(hClean.Rows.Count, 1).End(xlUp).Row)
+    MPivot = hClean.Range("A2:I" & totalFilas).Value
+    Set objTable = hClean.ListObjects.Add(xlSrcRange, Range("A1:" & LCL & totalFilas), , xlYes)
+    objTable.TableStyle = "TableStyleMedium2"
+
+    Sheets.Add(After:=Sheets("Clean")).Name = "Pivot"
+    Set hPivot = wbInv.Sheets("Pivot")
+    Set r1 = hClean.ListObjects(1).Range
+    TName = hClean.ListObjects(1).Name
+    ActiveWindow.DisplayGridlines = False
+    
+    'Setting up the Pivot Cache
+    Set PC = ActiveWorkbook.PivotCaches.Create(xlDatabase, SourceData:=r1)
+        
+    'Creation of the blank Pivot Table object
+    Set PT = PC.CreatePivotTable(TableDestination:=hPivot.Cells(1, 1), TableName:=TName)
+        
+    'Insertion of the Priority to row field
+    With hPivot.PivotTables(TName).PivotFields("Item")
+        .Orientation = xlRowField
+        .Position = 1
+    End With
+    
+    'Insert Review Status to the row field
+    With hPivot.PivotTables(TName).PivotFields("Description")
+        .Orientation = xlColumnField
+        .Position = 1
+    End With
+    
+    'Insertion of the ProjectName to the value section
+    With hPivot.PivotTables(TName).PivotFields("Qty")
+        .Orientation = xlDataField
+        .Position = 1
+    End With
+    
+    'Insertion of the ProjectName to the value section
+    With hPivot.PivotTables(TName).PivotFields("Type")
+        .Orientation = xlPageField
+        .Position = 1
+    End With
+          
+  End Sub
+
+' ==============================================================
+'                       PROCCESS BILLING
+' ==============================================================
+  Sub JoinTranPivot()
+    'Juntar registros nuevos (TRANSACTION + PIVOT)
+    Dim TypeField As PivotField
+    Dim TypeValue As String
+    Dim totalFilas As Long
+    Dim LCN As Long
+    Dim LCL As String
+    Dim Matriz, Headers As Variant
+
+
+    Set TypeField = hPivot.PivotTables(TName).PivotFields("Type")
+    TypeField.ClearAllFilters     ' Limpiar filtros existentes
+
+    ' Recorrer los elementos del campo "Type"
+    For i = 1 To TypeField.PivotItems.Count                                   '<------ Filtrar por el tipo de sheet en PIVOT TABLE
+      TypeValue = TypeField.PivotItems(i).Name
+      TypeField.CurrentPage = TypeValue         ' Aplicar filtro al campo "Type"
+      
+      totalFilas = (hPivot.Cells(hPivot.Rows.Count, 1).End(xlUp).Row) - 1
+      LCN = (Application.WorksheetFunction.Match("Grand Total", hPivot.Rows(4), 0)) - 1
+      LCL = Split(Cells(1, LCN).Address, "$")(1)
+
+      Headers = hPivot.Range("A4:" & LCL & "4").Value
+      Matriz = hPivot.Range("A5:" & LCL & totalFilas).Value
+
+      For fila = 1 To UBound(Matriz)                                               '<------ Filtrar por filas de la Matriz de cada tipo (sheet)
+        Item = Matriz(fila, 1)
+        Key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
+        Set ItemsInfo = CreateObject("Scripting.Dictionary")
+
+        For columna = 2 To LCN                                                 '<------ Filtrar por las columnas
+          If Matriz(fila, columna) <> "" Then
+            Cargo = Headers(1, columna)
+            Qty = CInt(Matriz(fila, columna))
+            ItemsInfo.Add Cargo, Qty
+          End If
+        Next columna
+
+        If Not Items_.Exists(Key) Then
+          ItemsInfo.Add "Date", "Unknow"
+          ItemsInfo.Add "Ref", ItemsRef.Item(Item)
+        Else
+          Date_ = CDate(Items_.Item(Key).Item("Date")) ' Accede al valor de Date en ItemsInfo
+          Ref = Items_.Item(Key).Item("Ref") ' Accede al valor de Ref en ItemsInfo
+
+          Items_.Remove (Key)
+
+          ItemsInfo.Add "Date", Date_
+          ItemsInfo.Add "Ref", Ref
+        End If
+
+        Items_.Add Key, ItemsInfo
+
+      Next fila
+      
+    Next i
+
+    ' Opci�n para limpiar el filtro despu�s de recorrer
+      TypeField.ClearAllFilters
+
+
+
+    ' Crear o seleccionar la hoja "Print"
+      Dim ws As Worksheet
+      On Error Resume Next
+      Set ws = ThisWorkbook.Sheets("Print")
+      On Error GoTo 0
+
+      If ws Is Nothing Then
+          Set ws = ThisWorkbook.Sheets.Add
+          ws.Name = "Print"
+      Else
+          ws.Cells.Clear ' Limpiar contenido si la hoja ya existe
+      End If
+
+      ' Imprimir el diccionario anidado Items_ en la hoja "Print"
+      Dim rowIndex As Long
+      rowIndex = 1
+      ws.Cells(rowIndex, 1).Value = "Key"
+      ws.Cells(rowIndex, 2).Value = "Cargo"
+      ws.Cells(rowIndex, 3).Value = "Quantity"
+      ws.Cells(rowIndex, 4).Value = "Date"
+      ws.Cells(rowIndex, 5).Value = "Ref"
+
+      Dim itemKey As Variant
+      Dim subDict As Object
+      Dim cargoKey As Variant
+
+      For Each itemKey In Items_.Keys
+          Set subDict = Items_.Item(itemKey)
+          
+          ' Imprimir cada elemento del sub-diccionario
+          For Each cargoKey In subDict.Keys
+              rowIndex = rowIndex + 1
+              ws.Cells(rowIndex, 1).Value = itemKey ' Imprimir la clave principal
+              If cargoKey = "Date" Or cargoKey = "Ref" Then
+                  ws.Cells(rowIndex, 4).Value = subDict.Item("Date")
+                  ws.Cells(rowIndex, 5).Value = subDict.Item("Ref")
+              Else
+                  ws.Cells(rowIndex, 2).Value = cargoKey ' Imprimir el cargo
+                  ws.Cells(rowIndex, 3).Value = subDict.Item(cargoKey) ' Imprimir la cantidad
+              End If
+          Next cargoKey
+      Next itemKey
+
+      ' Ajustar el ancho de las columnas
+      ws.Columns("A:E").AutoFit
+  End Sub
+
+  Sub GetMatrices()
+  
+    Dim TypeField As PivotField
+    Dim TypeValue As String
+    Dim totalFilas As Long
+    Dim LCN As Long
+    Dim LCL As String
+    Dim Matriz, Headers As Variant
+
+    Set TypeField = hPivot.PivotTables(TName).PivotFields("Type")
+    Set Headers = CreateObject("Scripting.Dictionary")
+    Set ItemsTemplate = CreateObject("Scripting.Dictionary")
+
+    ' Recorrer los elementos del campo "Type"
+    For i = 1 To TypeField.PivotItems.Count                                   '<------ Filtrar por el tipo de sheet en PIVOT TABLE
+      TypeValue = TypeField.PivotItems(i).Name
+      Set hSave = ThisWorkbook.Sheets(TypeValue)
+      
+      totalFilas = hSave.Cells(hSave.Rows.Count, 1).End(xlUp).Row
+      LCN = (Application.WorksheetFunction.Match("Notes", hSave.Rows(4), 0)) - 1
+      LCL = Split(Cells(1, LCN).Address, "$")(1)
+
+      Headers(TypeValue) = hSave.Range("A4:" & LCL & "4").Value
+      Matriz = hSave.Range("A7:" & LCL & totalFilas).Value
+
+      For fila = 1 To UBound(Matriz)                                               '<------ Filtrar por filas de la Matriz de cada tipo (sheet)
+        Item = Matriz(fila, 2)
+        Key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
+        Set ItemsInfo = CreateObject("Scripting.Dictionary")
+
+        For columna = 4 To LCN                                                 '<------ Filtrar por las columnas
+          If Matriz(fila, columna) <> "" And Matriz(fila, columna) <> 0 Then
+            Cargo = Headers(TypeValue)(1, columna)
+            Qty = CInt(Matriz(fila, columna))
+            ItemsInfo.Add Cargo, Qty
+          End If
+        Next columna
+
+        If Not ItemsTemplate.Exists(Key) Then
+          Date_ = CDate(Matriz(fila, 1)) ' Accede al valor de Date en ItemsInfo
+          Ref = Matriz(fila, 3) ' Accede al valor de Ref en ItemsInfo
+          ItemsInfo.Add "Date", Date_
+          ItemsInfo.Add "Ref", ItemsRef.Item(Item)
+        End If
+        ItemsTemplate.Add Key, ItemsInfo
+      Next fila
+      hSave.Range("A7:" & LCL & totalFilas).Value = ""
+    Next i
+
+  End Sub
+
+  Sub MatchValues()
+    Dim itemKey As Variant
+    Dim subDict As Object
+    Dim cargoKey As Variant
+
+    For Each itemKey In Items_.Keys
+       Set subDict = Items_.Item(itemKey)
+       Set ItemsInfo = CreateObject("Scripting.Dictionary")
+
+
+      ' Imprimir cada elemento del sub-diccionario
+      For Each cargoKey In subDict.Keys
+        If cargoKey <> "Date" And cargoKey <> "Ref" Then
+          Cargo = cargoKey 
+          Qty = subDict.Item(cargoKey) 
+        End If
+        ItemsInfo.Add Cargo, Qty
+      Next cargoKey
+
+      
+      If Not ItemsTemplate.Exists(itemKey) Then
+        Date_ = subDict.Item("Date")
+        Ref = = subDict.Item("Ref")
+        ItemsInfo.Add "Date", Date_
+        ItemsInfo.Add "Ref", Ref
+      Else
+        Date_ = CDate(ItemsTemplate.Item(itemKey).Item("Date")) ' Accede al valor de Date en ItemsInfo
+        Ref = ItemsTemplate.Item(itemKey).Item("Ref") ' Accede al valor de Ref en ItemsInfo
+
+        Items_.Remove (Key)
+
+        ItemsInfo.Add "Date", Date_
+        ItemsInfo.Add "Ref", Ref
+      End If
+
+      ItemsTemplate.Add itemKey, ItemsInfo
+
+    Next itemKey
+
+    ' Ajustar el ancho de las columnas
+    ws.Columns("A:E").AutoFit
+End Sub
+
+' ==============================================================
+'                             EXTRAS
+' ==============================================================
+  Sub ApplyFormat()
+    Dim TypeField As PivotField
+    Dim TypeValue As String
+    Dim totalFilas As Long
+    Dim LCN As Long
+    Dim LCL As String
+
+    ' Inicializa el campo de tipo y el diccionario
+    Set TypeField = hPivot.PivotTables(TName).PivotFields("Type")
+
+    ' Recorre los elementos del campo "Type"
+    For i = 1 To TypeField.PivotItems.Count
+      TypeValue = TypeField.PivotItems(i).Name
+      Set hSave = ThisWorkbook.Sheets(TypeValue)
+      
+      totalFilas = hSave.Cells(hSave.Rows.Count, 2).End(xlUp).Row
+      LCN = Application.WorksheetFunction.Match("Notes", hSave.Rows(5), 0)
+      LCL = Split(Cells(1, LCN).Address, "$")(1)
+      
+      Call SetBorders(hSave, "A2:" & LCL & totalFilas)
+    Next i
+
+  End Sub
+
+  Sub SetBorders(Sh As Worksheet, Rango_ As String)
+    With Sh.Range(Rango_)
+      .Borders.LineStyle = xlContinuous
+      .Borders.Weight = xlThin
+    End With
+  End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
