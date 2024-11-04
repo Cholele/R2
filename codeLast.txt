@@ -15,7 +15,7 @@ Dim r1 As Range
 Dim objTable As ListObject
 Dim dict As Object
 
-'Variables Billing Fileeee
+'Variables Billing Fileeee  HOLAAAAAAAAAAAAAA
 Dim hIn, hOut, hReturn, hFail As Worksheet 'FKBSKFB
 
 'Variables WHS DB
@@ -28,6 +28,7 @@ Dim MIn, MOut, MReturn As Variant
 Dim totalFilas, xIn, xOut, xR As Long
 Dim Items_, ItemsRef, dict_, valueDict, DescDic, ConvertionFail, ItemsTemplate, Headers As Object
 Dim MShipTo As Variant
+
 
   Sub AA_Update_Fullfilment()
     Process_Transaction
@@ -57,10 +58,8 @@ Dim MShipTo As Variant
     JoinTranPivot
     GetMatrices
     MatchValues
+    PrintItemsTemplate
   End Sub
-
-
-
 
 
 ' ==============================================================
@@ -304,7 +303,7 @@ Dim MShipTo As Variant
     ' Ordenar el rango por Acc
     With hClean.Sort
         .SortFields.Clear
-        .SortFields.Add2 Key:=Range("F2:F" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .SortFields.Add2 key:=Range("F2:F" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
         .SetRange Rango
         .Header = xlYes
         .MatchCase = False
@@ -316,7 +315,7 @@ Dim MShipTo As Variant
     ' Ordenar el rango por Sheet
     With hClean.Sort
         .SortFields.Clear
-        .SortFields.Add2 Key:=Range("A2:A" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        .SortFields.Add2 key:=Range("A2:A" & totalFilas + 1), SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
         .SetRange Rango
         .Header = xlYes
         .MatchCase = False
@@ -438,86 +437,36 @@ Dim MShipTo As Variant
 
       For fila = 1 To UBound(Matriz)                                               '<------ Filtrar por filas de la Matriz de cada tipo (sheet)
         Item = Matriz(fila, 1)
-        Key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
+        key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
         Set ItemsInfo = CreateObject("Scripting.Dictionary")
 
         For columna = 2 To LCN                                                 '<------ Filtrar por las columnas
           If Matriz(fila, columna) <> "" Then
-            Cargo = Headers(1, columna)
-            Qty = CInt(Matriz(fila, columna))
-            ItemsInfo.Add Cargo, Qty
+            ItemsInfo.Add Headers(1, columna), CInt(Matriz(fila, columna))
           End If
         Next columna
 
-        If Not Items_.Exists(Key) Then
+        If Not Items_.Exists(key) Then
           ItemsInfo.Add "Date", "Unknow"
           ItemsInfo.Add "Ref", ItemsRef.Item(Item)
         Else
-          Date_ = CDate(Items_.Item(Key).Item("Date")) ' Accede al valor de Date en ItemsInfo
-          Ref = Items_.Item(Key).Item("Ref") ' Accede al valor de Ref en ItemsInfo
+          Date_ = CDate(Items_.Item(key).Item("Date")) ' Accede al valor de Date en ItemsInfo
+          Ref = Items_.Item(key).Item("Ref") ' Accede al valor de Ref en ItemsInfo
 
-          Items_.Remove (Key)
+          Items_.Remove (key)
 
           ItemsInfo.Add "Date", Date_
           ItemsInfo.Add "Ref", Ref
         End If
 
-        Items_.Add Key, ItemsInfo
+        Items_.Add key, ItemsInfo
 
       Next fila
       
     Next i
 
-    ' Opci�n para limpiar el filtro despu�s de recorrer
+    ' Opci?n para limpiar el filtro despu?s de recorrer
       TypeField.ClearAllFilters
-
-
-
-    ' Crear o seleccionar la hoja "Print"
-      Dim ws As Worksheet
-      On Error Resume Next
-      Set ws = ThisWorkbook.Sheets("Print")
-      On Error GoTo 0
-
-      If ws Is Nothing Then
-          Set ws = ThisWorkbook.Sheets.Add
-          ws.Name = "Print"
-      Else
-          ws.Cells.Clear ' Limpiar contenido si la hoja ya existe
-      End If
-
-      ' Imprimir el diccionario anidado Items_ en la hoja "Print"
-      Dim rowIndex As Long
-      rowIndex = 1
-      ws.Cells(rowIndex, 1).Value = "Key"
-      ws.Cells(rowIndex, 2).Value = "Cargo"
-      ws.Cells(rowIndex, 3).Value = "Quantity"
-      ws.Cells(rowIndex, 4).Value = "Date"
-      ws.Cells(rowIndex, 5).Value = "Ref"
-
-      Dim itemKey As Variant
-      Dim subDict As Object
-      Dim cargoKey As Variant
-
-      For Each itemKey In Items_.Keys
-          Set subDict = Items_.Item(itemKey)
-          
-          ' Imprimir cada elemento del sub-diccionario
-          For Each cargoKey In subDict.Keys
-              rowIndex = rowIndex + 1
-              ws.Cells(rowIndex, 1).Value = itemKey ' Imprimir la clave principal
-              If cargoKey = "Date" Or cargoKey = "Ref" Then
-                  ws.Cells(rowIndex, 4).Value = subDict.Item("Date")
-                  ws.Cells(rowIndex, 5).Value = subDict.Item("Ref")
-              Else
-                  ws.Cells(rowIndex, 2).Value = cargoKey ' Imprimir el cargo
-                  ws.Cells(rowIndex, 3).Value = subDict.Item(cargoKey) ' Imprimir la cantidad
-              End If
-          Next cargoKey
-      Next itemKey
-
-      ' Ajustar el ancho de las columnas
-      ws.Columns("A:E").AutoFit
   End Sub
 
   Sub GetMatrices()
@@ -539,36 +488,36 @@ Dim MShipTo As Variant
       Set hSave = ThisWorkbook.Sheets(TypeValue)
       
       totalFilas = hSave.Cells(hSave.Rows.Count, 1).End(xlUp).Row
-      LCN = (Application.WorksheetFunction.Match("Notes", hSave.Rows(4), 0)) - 1
-      LCL = Split(Cells(1, LCN).Address, "$")(1)
 
-      Headers(TypeValue) = hSave.Range("A4:" & LCL & "4").Value
-      Matriz = hSave.Range("A7:" & LCL & totalFilas).Value
+      If totalFilas >= 7 Then
+        LCN = (Application.WorksheetFunction.Match("Notes", hSave.Rows(5), 0)) - 1
+        LCL = Split(Cells(1, LCN).Address, "$")(1)
 
-      For fila = 1 To UBound(Matriz)                                               '<------ Filtrar por filas de la Matriz de cada tipo (sheet)
-        Item = Matriz(fila, 2)
-        Key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
-        Set ItemsInfo = CreateObject("Scripting.Dictionary")
+        Headers(TypeValue) = hSave.Range("A5:" & LCL & "5").Value
+        Matriz = hSave.Range("A7:" & LCL & totalFilas).Value
 
-        For columna = 4 To LCN                                                 '<------ Filtrar por las columnas
-          If Matriz(fila, columna) <> "" And Matriz(fila, columna) <> 0 Then
-            Cargo = Headers(TypeValue)(1, columna)
-            Qty = CInt(Matriz(fila, columna))
-            ItemsInfo.Add Cargo, Qty
+        For fila = 1 To UBound(Matriz)                                               '<------ Filtrar por filas de la Matriz de cada tipo (sheet)
+          Item = Matriz(fila, 2)
+          key = TypeValue & "|" & Item           ' Combina Sheet y Transaction Id como clave
+          Set ItemsInfo = CreateObject("Scripting.Dictionary")
+
+          For columna = 4 To LCN                                                 '<------ Filtrar por las columnas
+            If Matriz(fila, columna) <> "" And Matriz(fila, columna) <> 0 Then
+              ItemsInfo.Add Headers(TypeValue)(1, columna), CInt(Matriz(fila, columna))
+            End If
+          Next columna
+
+          If Not ItemsTemplate.Exists(key) Then
+            Date_ = CDate(Matriz(fila, 1)) ' Accede al valor de Date en ItemsInfo
+            Ref = Matriz(fila, 3) ' Accede al valor de Ref en ItemsInfo
+            ItemsInfo.Add "Date", Date_
+            ItemsInfo.Add "Ref", ItemsRef.Item(Item)
           End If
-        Next columna
-
-        If Not ItemsTemplate.Exists(Key) Then
-          Date_ = CDate(Matriz(fila, 1)) ' Accede al valor de Date en ItemsInfo
-          Ref = Matriz(fila, 3) ' Accede al valor de Ref en ItemsInfo
-          ItemsInfo.Add "Date", Date_
-          ItemsInfo.Add "Ref", ItemsRef.Item(Item)
-        End If
-        ItemsTemplate.Add Key, ItemsInfo
-      Next fila
-      hSave.Range("A7:" & LCL & totalFilas).Value = ""
+          ItemsTemplate.Add key, ItemsInfo
+        Next fila
+        hSave.Range("A7:" & LCL & totalFilas).Value = ""
+      End If
     Next i
-
   End Sub
 
   Sub MatchValues()
@@ -580,39 +529,67 @@ Dim MShipTo As Variant
        Set subDict = Items_.Item(itemKey)
        Set ItemsInfo = CreateObject("Scripting.Dictionary")
 
-
-      ' Imprimir cada elemento del sub-diccionario
-      For Each cargoKey In subDict.Keys
-        If cargoKey <> "Date" And cargoKey <> "Ref" Then
-          Cargo = cargoKey 
-          Qty = subDict.Item(cargoKey) 
-        End If
-        ItemsInfo.Add Cargo, Qty
-      Next cargoKey
-
-      
       If Not ItemsTemplate.Exists(itemKey) Then
-        Date_ = subDict.Item("Date")
-        Ref = = subDict.Item("Ref")
-        ItemsInfo.Add "Date", Date_
-        ItemsInfo.Add "Ref", Ref
+        For Each cargoKey In subDict.Keys
+          ItemsInfo.Add CargoKey, subDict.Item(cargoKey)
+        Next cargoKey
+        ItemsTemplate.Add itemKey, ItemsInfo
       Else
-        Date_ = CDate(ItemsTemplate.Item(itemKey).Item("Date")) ' Accede al valor de Date en ItemsInfo
-        Ref = ItemsTemplate.Item(itemKey).Item("Ref") ' Accede al valor de Ref en ItemsInfo
-
-        Items_.Remove (Key)
-
-        ItemsInfo.Add "Date", Date_
-        ItemsInfo.Add "Ref", Ref
+        Set subDict2 = ItemsTemplate.Item(itemKey)
+        For Each cargoKey In subDict.Keys
+          If cargoKey <> "Date" And cargoKey <> "Ref" Then
+            If Not subDict2.Exists(cargoKey) Then 
+              subDict2.Item(CargoKey) = subDict.Item(cargoKey)
+            Else
+              subDict2.Item(cargoKey) = subDict2.Item(cargoKey) + subDict.Item(cargoKey)
+            End If
+          End If
+        Next cargoKey
       End If
-
-      ItemsTemplate.Add itemKey, ItemsInfo
-
     Next itemKey
-
-    ' Ajustar el ancho de las columnas
-    ws.Columns("A:E").AutoFit
 End Sub
+
+Sub DictionaryConvertion()
+
+  Dim TypeField As PivotField
+  Dim Matrices, Index As Object
+  Dim ItemsInfo As Object
+  Dim key As Variant
+  Dim item As Variant
+
+  Set Matrices = CreateObject("Scripting.Dictionary")
+  Set Index = CreateObject("Scripting.Dictionary")
+  Set TypeField = hPivot.PivotTables(TName).PivotFields("Type")
+  RowCount = ItemsTemplate.Count
+    
+
+  ' Dictionario de las matrices y de sus indices
+  For i = 1 To TypeField.PivotItems.Count                                   
+    TypeValue = TypeField.PivotItems(i).Name
+    ColumnCount = UBound(Headers(TypeValue), 2) + 1
+    ReDim Mat(1 To RowCount, 1 To ColumnCount)
+    Matrices(TypeValue) = Mat
+    Index(TypeValue) = 1
+  Next i
+
+    
+
+  ' Separar dictionary en matrices
+  For Each key In ItemsTemplate.Keys
+    ' Separar la clave en partes
+    parts = Split(key, " | ")
+    sheet = Trim(parts(0)) ' Obtener la parte del sheet y eliminar espacios
+    item = Trim(parts(1))  ' Obtener la parte del item y eliminar espacios
+
+    Set ItemsInfo = ItemsTemplate.Item(key)
+    
+    ' Imprimir cada item dentro de ItemsInfo
+    For Each item In ItemsInfo.Keys
+        'Debug.Print "   " & item & ": " & ItemsInfo.Item(item)
+    Next item
+  Next key
+End Sub
+
 
 ' ==============================================================
 '                             EXTRAS
@@ -647,6 +624,8 @@ End Sub
       .Borders.Weight = xlThin
     End With
   End Sub
+
+
 
 
 
