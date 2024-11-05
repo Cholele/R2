@@ -1,34 +1,34 @@
-Attribute VB_Name = "Module1"
+  Attribute VB_Name = "Module1"
 
-Dim wbTran As Workbook
-Dim MTran As Variant
+  Dim wbTran As Workbook
+  Dim MTran As Variant
 
-'Variables de Invoice File
-Dim wbInv As Workbook
-Dim hInvoice, hAjust, hClean, hPivot, hActivity, hSave As Worksheet
-Dim MOriginal, MAdjust, MClean, Matriz As Variant
+  'Variables de Invoice File
+  Dim wbInv As Workbook
+  Dim hInvoice, hAjust, hClean, hPivot, hActivity, hSave As Worksheet
+  Dim MOriginal, MAdjust, MClean, Matriz As Variant
 
-Dim LCN, x1, x2 As Integer
-Dim LCL, Ty, Qty, item, Desc, TName, InvType, Cliente As String
-Dim PT As PivotTable
-Dim PC As PivotCache
-Dim r1 As Range
-Dim objTable As ListObject
-Dim dict As Object
+  Dim LCN, x1, x2 As Integer
+  Dim LCL, Ty, Qty, item, Desc, TName, InvType, Cliente As String
+  Dim PT As PivotTable
+  Dim PC As PivotCache
+  Dim r1 As Range
+  Dim objTable As ListObject
+  Dim dict As Object
 
-'Variables Billing Fileeee  HOLAAAAAAAAAAAAAA
-Dim hIn, hOut, hReturn, hFail As Worksheet 'FKBSKFB
+  'Variables Billing Fileeee  HOLAAAAAAAAAAAAAA
+  Dim hIn, hOut, hReturn, hFail As Worksheet 'FKBSKFB
 
-'Variables WHS DB
-Dim wbD As Workbook
-Dim hClieents As Worksheet
-Dim MClients As Variant
+  'Variables WHS DB
+  Dim wbD As Workbook
+  Dim hClieents As Worksheet
+  Dim MClients As Variant
 
-'Variables globales
-Dim MIn, MOut, MReturn As Variant
-Dim totalFilas, xIn, xOut, xR As Long
-Dim Items_, ItemsRef, dict_, valueDict, DescDic, ConvertionFail, ItemsTemplate, Headers, HeadersInfo, Hojas, Matrices As Object
-Dim MShipTo As Variant
+  'Variables globales
+  Dim MIn, MOut, MReturn As Variant
+  Dim totalFilas, xIn, xOut, xR As Long
+  Dim Items_, ItemsRef, dict_, valueDict, DescDic, ConvertionFail, ItemsTemplate, Headers, HeadersInfo, Hojas, Matrices As Object
+  Dim MShipTo As Variant
 
 
   Sub AA_Update_Fullfilment()
@@ -102,7 +102,7 @@ Dim MShipTo As Variant
       End Select
 
       If Not Items_.Exists(MTran(fila, 4)) Then
-        ItemsInfo.Add "Date", MTran(fila, 3): ItemsInfo.Add "Ref", MTran(fila, 5)
+        ItemsInfo.Add "Date", MTran(fila, 3): ItemsInfo.Add "Reference", MTran(fila, 5)
         Items_.Add Sheet & "|" & MTran(fila, 4), ItemsInfo
       End If
 
@@ -460,15 +460,15 @@ Dim MShipTo As Variant
 
         If Not Items_.Exists(key) Then
           ItemsInfo.Add "Date", "Unknow"
-          ItemsInfo.Add "Ref", ItemsRef.item(item)
+          ItemsInfo.Add "Reference", ItemsRef.item(item)
         Else
           Date_ = CDate(Items_.item(key).item("Date")) ' Accede al valor de Date en ItemsInfo
-          Ref = Items_.item(key).item("Ref") ' Accede al valor de Ref en ItemsInfo
+          Ref = Items_.item(key).item("Reference") ' Accede al valor de Ref en ItemsInfo
 
           Items_.Remove (key)
 
           ItemsInfo.Add "Date", Date_
-          ItemsInfo.Add "Ref", Ref
+          ItemsInfo.Add "Reference", Ref
         End If
 
         Items_.Add key, ItemsInfo
@@ -517,7 +517,7 @@ Dim MShipTo As Variant
             Date_ = CDate(Matriz(fila, 1)) ' Accede al valor de Date en ItemsInfo
             Ref = Matriz(fila, 3) ' Accede al valor de Ref en ItemsInfo
             ItemsInfo.Add "Date", Date_
-            ItemsInfo.Add "Ref", ItemsRef.item(item)
+            ItemsInfo.Add "Reference", ItemsRef.item(item)
           End If
           ItemsTemplate.Add key, ItemsInfo
         Next fila
@@ -543,7 +543,7 @@ Dim MShipTo As Variant
       Else
         Set subDict2 = ItemsTemplate.item(itemKey)
         For Each cargoKey In subDict.Keys
-          If cargoKey <> "Date" And cargoKey <> "Ref" Then
+          If cargoKey <> "Date" And cargoKey <> "Reference" Then
             If Not subDict2.Exists(cargoKey) Then
               subDict2.item(cargoKey) = subDict.item(cargoKey)
             Else
@@ -557,7 +557,7 @@ Dim MShipTo As Variant
 
   Sub DictionaryConvertion()
     Dim ItemsInfo, HInfo As Object
-    Dim key, item, MatchFail, Header As Variant
+    Dim key, item, MatchFail, Header, Mat, Matt As Variant
     Dim j As Integer
     Dim Exist As Boolean
 
@@ -571,10 +571,10 @@ Dim MShipTo As Variant
 
     ' Crear Dictionaries de las matrices y de sus indices
     For Each hoja In Hojas.Keys
+      
       ColumnCount = UBound(Headers(hoja), 2) + 1
       ReDim Mat(1 To RowCount, 1 To ColumnCount)
-      Debug.Print "MATRIZ INICIALIZAD EN " & hoja & "   Filas: " & RowCount & "     Columnas: " & ColumnCount
-      Matrices(hoja) = Mat
+      Matrices(hoja) = Mat 
 
       Set HInfo = CreateObject("Scripting.Dictionary")
       Header = Headers(hoja)
@@ -607,7 +607,12 @@ Dim MShipTo As Variant
         Else
           Exist = True
           ColIndex = HeadersInfo.item(Sheet).item(keyitem)
-          Matrices(Sheet)(index, ColIndex) = ItemsInfo.item(keyitem)
+          'Debug.Print "Hoja: " & Sheet & " (x,y) = (" & ColIndex & "," index & ")"
+          Matt = Matrices(Sheet)
+          Matt(index, ColIndex) = ItemsInfo.item(keyitem)
+          Matrices(Sheet) = Matt
+          Debug.Print "Valor en la matriz (" & Sheet & ", " & Index & ", " & ColIndex & "): " & Matrices(Sheet)(Index, ColIndex)
+
         End If
       Next keyitem
 
@@ -621,7 +626,7 @@ Dim MShipTo As Variant
 
     Next key
 
-    Debug.Print "Valor en matriz: " & Matrices("Inbound")(5, 2)
+    'Debug.Print "Valor en matriz: " & Matrices("Inbound")(5, 2)
   End Sub
 
   Sub SetValues()
@@ -643,8 +648,8 @@ Dim MShipTo As Variant
       'ReDim Matriz(1 To LastRow, 1 To LCN)
 
       hSave.Range("A7:" & LCL & LastRow).Value = Matriz
-      Debug.Print "Imprimi= " & hoja & "         Rango = A7:" & LCL & LastRow
-      Debug.Print "VALOR: " & Matriz(5,2)
+      'Debug.Print "Imprimi= " & hoja & "         Rango = A7:" & LCL & LastRow
+      'Debug.Print "VALOR: " & Matriz(5,2)
 
       ' ' Recorrer la matriz y imprimir cada valor
       ' For i = 1 To UBound(Matriz, 1) ' Recorre las filas
